@@ -4,4 +4,4 @@ results6 = model.predict('input_videos/neutral1.mp4',save=True)
 print(results6[0])
 print('=====================================')
 for box in results6[0].boxes:
-print(box)
+    print(box)
