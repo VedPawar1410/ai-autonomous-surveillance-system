@@ -5,35 +5,16 @@ This project implements an AI-powered autonomous surveillance system using advan
 
 ## Features
 - Real-time object detection (YOLOv8, Faster R-CNN)
-- Anomaly detection using I3D two-stream model
+- Anomaly detection using the I3D two-stream model
 - Support for SPHAR and UCF-Crime datasets
-- Real-time alert generation (email/SMS)
-- Edge deployment support (Jetson Nano, Raspberry Pi)
 - Modular, scalable, and cost-effective
-
-## Project Structure
-├── data/                # Datasets and annotations 
-├── yolo/                # YOLOv8 scripts and configs 
-├── rcnn/                # Faster R-CNN scripts 
-├── i3d_two_stream/      # Custom anomaly detection model 
-├── utils/               # Helper scripts (preprocessing, visualization) 
-├── outputs/             # Sample outputs, result videos, graphs 
-├── diagrams/            # System architecture, DFD, class diagrams 
-├── README.md 
-└── requirements.txt
 
 ## Installation
 
 1. Clone the repository:
     ```
-    git clone https://github.com/yourusername/ai-autonomous-surveillance-system.git
-    cd ai-autonomous-surveillance-system
+    git clone https://github.com/VedPawar1410/ai-autonomous-surveillance-system.git
     ```
-2. Install dependencies:
-    ```
-    pip install -r requirements.txt
-    ```
-3. (Optional) Set up environment for GPU/edge deployment as described in the documentation.
 
 ## Usage
 
