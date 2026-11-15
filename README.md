@@ -179,7 +179,7 @@ Space repo (text files only: space/*)          GitHub repo (this one)
 - **Why the Space holds only a wrapper:** Hugging Face rejects binary files committed with plain git, and this repo has PNGs and `final.pt` in its history. The Space installs the package from GitHub, so GitHub stays the single source of truth.
 - **Tabs:** *Live tracking* (upload ≤ 30 s, or use the sample, to get the tracked video + events), *Anomaly explorer* (score vs. ground truth for all 290 test videos, precomputed from `final.pt`), *About & constraints*.
 - **GPU use:** only detection + tracking run inside `@spaces.GPU`. The same code falls back to CPU anywhere else.
-- **To update:** push to GitHub, then rebuild the Space (Settings → Factory rebuild, or upload a changed `space/` file).
+- **To update:** push to GitHub, set the new commit SHA in `space/requirements.txt`, and upload that file to the Space. The package is pinned to an exact commit, so the Space always runs known code, and the changed line forces Hugging Face to reinstall instead of reusing a cached build.
 - Local run of the same app: `pip install -e . gradio matplotlib && python space/app.py`.
 
 ## Limitations
@@ -249,6 +249,7 @@ Built in layers; each records what went wrong and the lesson.
 | 4.3 | **Let the disk fill up mid-project** | With 10 GB of zips plus caches on a nearly full laptop, commands failed with `ENOSPC`. The zips weren't needed once the caches existed. | Know which artifacts are raw inputs and which are derived, and delete what can be re-derived or re-downloaded. |
 | 4.4 | **Nearly shipped a video browsers can't play** (caught locally) | OpenCV writes MPEG-4 Part 2 (`mp4v`), which browsers won't play. The app re-encodes to H.264 with ffmpeg, which `packages.txt` installs on the Space. | Test the demo in a real browser before deploying. |
 | 4.5 | **Hard-coded LLM model names from memory** | The first test returned 404 from both providers: Groq no longer serves Llama 3.3, and Gemini 2.5 Flash is closed to new users. The fallback chain still produced a (template) answer. Fixed by checking each provider's `/models` list and picking current, fast models. | Hosted models get retired; verify against the live model list, make names configurable, and always have a non-LLM fallback. |
+| 4.6 | **Installed the package from a moving branch (`@main`)** | After adding `summarize.py`, the Space crashed with `ImportError: cannot import name 'summarize'`. The requirements line hadn't changed, so Hugging Face reused a cached install of the old package. Fixed by pinning to a commit SHA. | Pin deployments to exact versions; a moving reference plus a build cache means you don't know what code is running. |
 
 ### Key takeaways
 

@@ -1,5 +1,7 @@
 # The Space image already provides torch; the package declares compatible ranges so it installs alongside it.
 gradio==6.32.0
 matplotlib==3.11.2
-# The project package itself, installed from GitHub
-ai-surveillance @ git+https://github.com/VedPawar1410/ai-autonomous-surveillance-system@main
+# The project package itself, pinned to an exact GitHub commit. Pinning makes the Space reproducible AND busts
+# the build cache: with "@main" the line never changes, so Hugging Face reused a stale install of the package.
+# To ship new package code: push to GitHub, then update this SHA and upload this file to the Space.
+ai-surveillance @ git+https://github.com/VedPawar1410/ai-autonomous-surveillance-system@e89b43b5b865fd4e1d9b64c3d5d5ee4bc2016a50
