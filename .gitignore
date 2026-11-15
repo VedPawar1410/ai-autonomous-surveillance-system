@@ -13,8 +13,9 @@ data/*
 *.zip
 *.npy
 
-# Generated outputs (the final chosen model is committed explicitly in a later step)
-models/
+# Generated outputs. Only the final chosen model (4 MB, picked on validation) is committed.
+models/*
+!models/final.pt
 runs/
 outputs/
 
@@ -22,3 +23,5 @@ outputs/
 .DS_Store
 .idea/
 .vscode/
+
+!models/final.pt
