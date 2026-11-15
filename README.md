@@ -1,5 +1,7 @@
 # AI-Based Autonomous Surveillance System
 
+> **Rebuild in progress (Nov 2026).** The original 2025 scripts didn't run (syntax errors, a missing module, missing data) and were removed. They're still in git history. The project is being rebuilt as a reproducible `surveillance/` package on public UCF-Crime features. The claims below are from the 2025 version and haven't been verified yet. See `data/README.md`.
+
 ## Overview
 This project implements an AI-powered autonomous surveillance system using advanced object detection models (YOLOv8, Faster R-CNN) and a custom I3D two-stream model for anomaly detection. The system is designed to process video streams in real-time, detect specific actions, and flag anomalous events, enhancing traditional surveillance for public safety, traffic, and critical infrastructure monitoring.
 
