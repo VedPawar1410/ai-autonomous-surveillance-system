@@ -13,7 +13,8 @@ data/*
 *.zip
 *.npy
 
-# Generated outputs
+# Generated outputs (the final chosen model is committed explicitly in a later step)
+models/
 runs/
 outputs/
 
