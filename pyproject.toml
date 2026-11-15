@@ -7,10 +7,17 @@ name = "ai-surveillance"
 version = "0.1.0"
 description = "Weakly-supervised video anomaly detection (UCF-Crime, MIL) + real-time person tracking with event alerts"
 requires-python = ">=3.11"
-dynamic = ["dependencies"]
+# Compatible RANGES, not exact pins: an installable package must coexist with whatever the host already has
+# (e.g. Hugging Face ZeroGPU forces its own torch<=2.13). Exact, tested versions live in requirements.txt.
+dependencies = [
+    "numpy>=1.26",
+    "torch>=2.2",
+    "torchvision>=0.17",
+    "scikit-learn>=1.4",
+    "ultralytics>=8.3",
+    "opencv-python>=4.9",
+    "lap>=0.5",
+]
 
 [tool.setuptools]
 packages = ["surveillance"]
-
-[tool.setuptools.dynamic]
-dependencies = { file = ["requirements.txt"] }   # single source of truth for pins

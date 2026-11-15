@@ -1,6 +1,5 @@
-# CPU-only PyTorch wheels (the free Space has no GPU; avoids ~2 GB of CUDA libraries)
---extra-index-url https://download.pytorch.org/whl/cpu
+# The Space image already provides torch; the package declares compatible ranges so it installs alongside it.
 gradio==6.32.0
 matplotlib==3.11.2
-# The project package itself, installed from GitHub (its own pins come from the repo's requirements.txt)
+# The project package itself, installed from GitHub
 ai-surveillance @ git+https://github.com/VedPawar1410/ai-autonomous-surveillance-system@main
