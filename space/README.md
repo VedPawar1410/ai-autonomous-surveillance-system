@@ -17,7 +17,8 @@ short_description: Real-time person tracking + UCF-Crime anomaly detection
 Live person tracking (YOLOv8n + ByteTrack) with loitering and crowd alerts, plus an explorer for a weakly-supervised
 anomaly detector (MIL) benchmarked on UCF-Crime (test frame-level AUC 0.802 ± 0.005 over 5 seeds).
 
-Runs on the free CPU tier, no GPU. See the "About & constraints" tab.
+Runs on Hugging Face's free tier (ZeroGPU: a GPU is attached only for the tracking call, within a daily quota).
+See the "About & constraints" tab.
 
 Source, method, results and the learning log:
 https://github.com/VedPawar1410/ai-autonomous-surveillance-system

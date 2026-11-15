@@ -8,7 +8,17 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
+# ZeroGPU requires at least one @spaces.GPU function. `spaces` must be imported before CUDA is touched.
+# On CPU hardware (and locally, where `spaces` isn't installed) the decorator is a no-op.
+try:
+    import spaces
+    gpu_task = spaces.GPU(duration=120)
+except ImportError:
+    def gpu_task(fn):
+        return fn
+
 import gradio as gr
+import torch
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -52,15 +62,22 @@ def to_browser_mp4(src: Path) -> Path:
     return dst
 
 
+@gpu_task
+def _track_on_best_device(video_path):
+    """Only the detection + tracking work runs here (on ZeroGPU this is the GPU-attached part)."""
+    device = "cuda" if torch.cuda.is_available() else config.DETECTOR_DEVICE
+    return detect.run(video_path, device=device, save_video=True, max_seconds=MAX_SECONDS)
+
+
 def track(video_path):
     if not video_path:
         raise gr.Error("Upload a video or click the sample below first.")
-    s = detect.run(video_path, save_video=True, max_seconds=MAX_SECONDS)
-    out = to_browser_mp4(config.OUTPUTS_DIR / f"{Path(video_path).stem}_tracked.mp4")
+    s = _track_on_best_device(video_path)
+    out = to_browser_mp4(config.OUTPUTS_DIR / f"{Path(video_path).stem}_tracked.mp4")  # CPU work, outside the GPU slot
     rows = [[e["type"], e.get("track_id", "—"), e["start_s"], e.get("end_s", "—"), e.get("peak_count", "—")]
             for e in s["events"]]
     stats = (f"**{s['frames']} frames** processed ({s['frames'] / s['video_fps']:.0f} s of video, capped at "
-             f"{MAX_SECONDS} s) at **{s['processing_fps']} FPS** on this host's CPU · "
+             f"{MAX_SECONDS} s) at **{s['processing_fps']} FPS** on this host's **{s['device'].upper()}** · "
              f"{s['tracked_people_per_frame']} people tracked per frame · {s['unique_track_ids']} track IDs · "
              f"YOLOv8n @ {s['imgsz']} px + ByteTrack")
     return str(out), rows, stats
@@ -103,8 +120,9 @@ Real-time person tracking with event alerts, plus a weakly-supervised anomaly de
 Code, method and full results: [GitHub](https://github.com/VedPawar1410/ai-autonomous-surveillance-system)
 """
 CONSTRAINTS = f"""### Built under constraints
-- **Hosting:** free Hugging Face CPU tier (2 shared vCPUs, **no GPU**). Tracking runs at whatever FPS this CPU allows,
-  and uploads are capped at {MAX_SECONDS} s. On an M1 laptop CPU the same pipeline measured 23.8 FPS.
+- **Hosting:** free Hugging Face tier. On ZeroGPU a GPU is attached only for the tracking call and is limited by a
+  daily quota; on CPU hardware it runs on shared vCPUs. Uploads are capped at {MAX_SECONDS} s. The stats line after
+  each run shows the device actually used. On an M1 laptop CPU the same pipeline measured 23.8 FPS.
 - **Model size chosen for CPU:** YOLOv8n at 320 px, the only configuration that kept up with a 10 FPS camera on a laptop
   CPU. The larger YOLOv8x would run at about 0.9 FPS on that hardware.
 - **Data:** public, RGB-only I3D features (no optical-flow stream). Raw UCF-Crime video is about 100 GB, beyond a
