@@ -1,0 +1,21 @@
+{
+ "what": "surveillance.detect end-to-end (YOLOv8n + ByteTrack + event rules, no video writing) on vtest.avi, Apple M1 CPU",
+ "results": [
+  {
+   "imgsz": 640,
+   "processing_fps": 6.54,
+   "tracked_people_per_frame": 5.83,
+   "unique_track_ids": 40,
+   "loitering_events": 7,
+   "crowd_events": 1
+  },
+  {
+   "imgsz": 320,
+   "processing_fps": 23.78,
+   "tracked_people_per_frame": 5.61,
+   "unique_track_ids": 47,
+   "loitering_events": 6,
+   "crowd_events": 0
+  }
+ ]
+}

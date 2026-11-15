@@ -1,0 +1,41 @@
+{
+ "machine": "Apple M1, 16 GB (laptop)",
+ "video": "vtest.avi 768x576 @ 10 fps",
+ "results": [
+  {
+   "model": "yolov8n.pt",
+   "imgsz": 640,
+   "device": "cpu",
+   "frames": 200,
+   "fps": 7.28
+  },
+  {
+   "model": "yolov8n.pt",
+   "imgsz": 320,
+   "device": "cpu",
+   "frames": 200,
+   "fps": 20.81
+  },
+  {
+   "model": "yolov8n.pt",
+   "imgsz": 640,
+   "device": "mps",
+   "frames": 200,
+   "fps": 0.99
+  },
+  {
+   "model": "yolov8s.pt",
+   "imgsz": 640,
+   "device": "cpu",
+   "frames": 200,
+   "fps": 2.89
+  },
+  {
+   "model": "yolov8x.pt",
+   "imgsz": 640,
+   "device": "cpu",
+   "frames": 200,
+   "fps": 0.87
+  }
+ ]
+}

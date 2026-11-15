@@ -25,6 +25,17 @@ python -m surveillance.download
 python -m surveillance.data
 ```
 
+## Sample video (`data/samples/vtest.avi`)
+
+Used to demo and benchmark the detection + tracking module.
+
+- **Source:** [`opencv/opencv` `samples/data/vtest.avi`](https://github.com/opencv/opencv/blob/4.x/samples/data/vtest.avi) (Apache-2.0).
+- **Contents:** 8.1 MB, 768×576, 10 fps, 795 frames (about 80 s). A fixed outdoor camera with pedestrians.
+
+```bash
+mkdir -p data/samples && curl -L -o data/samples/vtest.avi https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/vtest.avi
+```
+
 ## Original capstone data
 
 The 2025 capstone used a privately shared zip of the same UCF-Crime features (two-stream: RGB + optical flow). That zip no longer exists, which is why this rebuild uses the public RGB-only mirror above.
