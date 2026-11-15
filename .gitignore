@@ -13,6 +13,11 @@ data/*
 *.zip
 *.npy
 
+# Local tool config + Space runtime downloads + build metadata
+.claude/
+space/runtime/
+*.egg-info/
+
 # Generated outputs. Only the final chosen model (4 MB, picked on validation) is committed.
 models/*
 !models/final.pt

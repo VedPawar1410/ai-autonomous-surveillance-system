@@ -67,7 +67,9 @@ class EventDetector:
 
 
 def run(video: str, model_name: str = config.DETECTOR_MODEL, device: str = config.DETECTOR_DEVICE,
-        imgsz: int = config.DETECTOR_IMGSZ, save_video: bool = False) -> dict:
+        imgsz: int = config.DETECTOR_IMGSZ, save_video: bool = False, max_seconds: float | None = None) -> dict:
+    """Track people in a video and return a summary with events. max_seconds caps how much video is processed
+    (the hosted demo uses it so one long upload can't monopolise a shared CPU)."""
     from ultralytics import YOLO  # imported here so the rule logic above has no heavy dependency
 
     config.MODELS_DIR.mkdir(exist_ok=True)
@@ -88,7 +90,11 @@ def run(video: str, model_name: str = config.DETECTOR_MODEL, device: str = confi
     start = time.perf_counter()
     stream = model.track(source=str(video), stream=True, persist=True, tracker="bytetrack.yaml",
                          classes=[config.PERSON_CLASS], device=device, imgsz=imgsz, verbose=False)
+    max_frames = int(max_seconds * fps) if max_seconds else None
     for n, r in enumerate(stream):
+        if max_frames is not None and n >= max_frames:
+            n -= 1          # frame n was decoded but not processed
+            break
         ids = [] if r.boxes.id is None else r.boxes.id.int().tolist()
         ids_seen.update(ids)
         n_boxes += len(ids)
