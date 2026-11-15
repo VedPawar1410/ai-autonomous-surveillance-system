@@ -12,7 +12,9 @@ from pathlib import Path
 # On CPU hardware (and locally, where `spaces` isn't installed) the decorator is a no-op.
 try:
     import spaces
-    gpu_task = spaces.GPU(duration=120)
+    # Each call reserves this many GPU-seconds from the visitor's daily quota up front; the real work takes
+    # a few seconds (300 frames at ~54 FPS + model load), so keep the reservation small.
+    gpu_task = spaces.GPU(duration=30)
 except ImportError:
     def gpu_task(fn):
         return fn
@@ -75,14 +77,20 @@ def _track_on_best_device(video_path):
 def track(video_path):
     if not video_path:
         raise gr.Error("Upload a video or click the sample below first.")
-    s = _track_on_best_device(video_path)
+    gpu_note = ""
+    try:
+        s = _track_on_best_device(video_path)
+    except Exception as e:  # ZeroGPU quota exhausted / GPU busy -> the demo must still work: run on CPU
+        print(f"GPU path failed, falling back to CPU: {type(e).__name__}: {e}", flush=True)
+        gpu_note = f" (GPU unavailable: {str(e)[:80] or type(e).__name__}; ran on CPU instead)"
+        s = detect.run(video_path, device="cpu", save_video=True, max_seconds=MAX_SECONDS)
     out = to_browser_mp4(config.OUTPUTS_DIR / f"{Path(video_path).stem}_tracked.mp4")  # CPU work, outside the GPU slot
     rows = [[e["type"], e.get("track_id", "—"), e["start_s"], e.get("end_s", "—"), e.get("peak_count", "—")]
             for e in s["events"]]
     stats = (f"**{s['frames']} frames** processed ({s['frames'] / s['video_fps']:.0f} s of video, capped at "
              f"{MAX_SECONDS} s) at **{s['processing_fps']} FPS** on this host's **{s['device'].upper()}** · "
              f"{s['tracked_people_per_frame']} people tracked per frame · {s['unique_track_ids']} track IDs · "
-             f"YOLOv8n @ {s['imgsz']} px + ByteTrack")
+             f"YOLOv8n @ {s['imgsz']} px + ByteTrack{gpu_note}")
     return str(out), rows, stats, s, ""
 
 
@@ -190,4 +198,4 @@ with gr.Blocks(title="AI Surveillance demo") as demo:
         gr.Markdown(CONSTRAINTS)
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(show_error=True)  # show the real error text instead of a bare "Error"
