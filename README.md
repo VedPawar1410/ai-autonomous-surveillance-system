@@ -9,7 +9,7 @@ Two parts. The first detects **anomalous events** (robbery, assault, road accide
 | UCF-Crime test **frame-level ROC AUC** (290 videos, 1.11M frames) | **0.802 ± 0.005** (5 seeds; final model 0.803) |
 | False alarms on normal videos (score > 0.5) | 2.1% of frames |
 | Person detection + tracking speed, laptop CPU (Apple M1) | **23.8 FPS** (real time for a 10 FPS camera) |
-| Same pipeline on the live demo (free ZeroGPU, CUDA) | **53.6 FPS** (300 frames, measured on the live Space) |
+| Same pipeline on the live demo (free ZeroGPU, CUDA) | **50–96 FPS** (300 frames; cold vs. warm GPU, measured on the live Space) |
 | Tests | 21 passing |
 
 ---
@@ -112,7 +112,7 @@ Every number above was produced on free or personal hardware. These limits shape
 | **Free LLM tiers**: rate limits, models retired without notice (Llama 3.3 vanished from Groq; Gemini 2.5 Flash closed to new users; Gemini 3.8 Flash timed out at 20 s) | Provider-agnostic OpenAI-compatible client, Groq → Gemini → template fallback, model names overridable by env var, daily call cap | A dedicated, SLA-backed model endpoint |
 | **No labelled event data** for loitering/crowding | Hand-set, documented thresholds; event logic unit-tested with synthetic tracks | Tuned and measured alert precision/recall |
 
-**The result under these limits:** a benchmarked anomaly detector at 0.80 frame-AUC, comparable to published MIL baselines, plus a tracker that runs in real time on a laptop CPU and at 53.6 FPS on a free shared GPU. Every number is reproducible from the commands below.
+**The result under these limits:** a benchmarked anomaly detector at 0.80 frame-AUC, comparable to published MIL baselines, plus a tracker that runs in real time on a laptop CPU and at 50–96 FPS on a free shared GPU. Every number is reproducible from the commands below.
 
 ## Project structure
 
@@ -250,6 +250,7 @@ Built in layers; each records what went wrong and the lesson.
 | 4.4 | **Nearly shipped a video browsers can't play** (caught locally) | OpenCV writes MPEG-4 Part 2 (`mp4v`), which browsers won't play. The app re-encodes to H.264 with ffmpeg, which `packages.txt` installs on the Space. | Test the demo in a real browser before deploying. |
 | 4.5 | **Hard-coded LLM model names from memory** | The first test returned 404 from both providers: Groq no longer serves Llama 3.3, and Gemini 2.5 Flash is closed to new users. The fallback chain still produced a (template) answer. Fixed by checking each provider's `/models` list and picking current, fast models. | Hosted models get retired; verify against the live model list, make names configurable, and always have a non-LLM fallback. |
 | 4.6 | **Installed the package from a moving branch (`@main`)** | After adding `summarize.py`, the Space crashed with `ImportError: cannot import name 'summarize'`. The requirements line hadn't changed, so Hugging Face reused a cached install of the old package. Fixed by pinning to a commit SHA. | Pin deployments to exact versions; a moving reference plus a build cache means you don't know what code is running. |
+| 4.7 | **Reserved far more GPU time than needed** | `@spaces.GPU(duration=120)`: the first live run worked, the next one failed. Each call reserves its full duration from the visitor's daily ZeroGPU quota, so a second 120 s reservation most likely didn't fit. With `duration=30`, two back-to-back runs passed (50 and 96 FPS on CUDA). I also added an automatic CPU fallback and `show_error=True`, so a visitor always gets a result and a readable reason. | Size resource reservations to the real workload, and design shared-quota features to degrade gracefully instead of failing. |
 
 ### Key takeaways
 
