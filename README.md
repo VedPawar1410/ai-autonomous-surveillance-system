@@ -2,13 +2,14 @@
 
 Two parts. The first detects **anomalous events** (robbery, assault, road accidents…) in CCTV video when only *video-level* labels exist for training (UCF-Crime benchmark). The second **tracks people in real time** and raises rule-based alerts (loitering, crowding).
 
-**Status:** runs locally (verified from a clean install). No live demo yet.
+**Live demo:** https://huggingface.co/spaces/vedpawar/ai-surveillance-demo (free Hugging Face ZeroGPU tier; the first load after idle takes about a minute)
 
 | Headline (all measured in this repo, see `reports/`) | Value |
 |---|---|
 | UCF-Crime test **frame-level ROC AUC** (290 videos, 1.11M frames) | **0.802 ± 0.005** (5 seeds; final model 0.803) |
 | False alarms on normal videos (score > 0.5) | 2.1% of frames |
 | Person detection + tracking speed, laptop CPU (Apple M1) | **23.8 FPS** (real time for a 10 FPS camera) |
+| Same pipeline on the live demo (free ZeroGPU, CUDA) | **53.6 FPS** (300 frames, measured on the live Space) |
 | Tests | 17 passing |
 
 ---
@@ -87,6 +88,21 @@ The **320 vs 640 tradeoff**: 320 is 3.6× faster and loses only 4% of detected p
 
 The same trained models scored with the 2025 per-pair metric give 0.786–0.790, not the same as the standard number and not comparable to published results. `tests/test_evaluate.py` shows why: per-pair averaging can't see a normal frame in one video outscoring an anomalous frame in another. A single alarm threshold across cameras has to handle exactly that case.
 
+## Built under constraints
+
+Every number above was produced on free or personal hardware. These limits shaped the design. Each row says what I did about one, and what lifting it would unlock.
+
+| Constraint | What I did about it | What lifting it would unlock |
+|---|---|---|
+| **No GPU for development**: one Apple M1 laptop, 16 GB RAM | Small models (1M-parameter MLP, YOLOv8n), CPU-first code. Trained 10 models (~6 min each) on CPU. Benchmarked every detector config instead of assuming. | YOLOv8s/m at 640 px in real time; feature extraction from raw video |
+| **The M1 GPU (MPS) was unusable**: it hung twice and ran 7× slower than CPU for frame-by-frame inference | Defaulted to CPU, and isolated each benchmark config in its own process so a hang can't block the rest | Batched GPU inference |
+| **About 10–14 GB of free disk** (it filled up completely mid-project) | Read features straight from the zips (no 10 GB extraction), cached crop-averaged arrays (~1 GB), deleted the zips once cached | The raw UCF-Crime videos (~100 GB) |
+| **The original data was lost**, and raw video was too big | Rebuilt on public precomputed I3D features (RGB only, no optical flow), with provenance documented | A two-stream (RGB + flow) model; end-to-end scoring of new videos |
+| **Free hosting**: Hugging Face ZeroGPU, a GPU only per request within a daily quota, plus a forced torch ≤ 2.13 | Uploads capped at 30 s; only detection/tracking runs inside the GPU slot (video re-encoding stays outside); package dependencies declared as ranges so they install alongside the host's PyTorch | Always-on GPU, longer videos, concurrent users |
+| **No labelled event data** for loitering/crowding | Hand-set, documented thresholds; event logic unit-tested with synthetic tracks | Tuned and measured alert precision/recall |
+
+**The result under these limits:** a benchmarked anomaly detector at 0.80 frame-AUC, comparable to published MIL baselines, plus a tracker that runs in real time on a laptop CPU and at 53.6 FPS on a free shared GPU. Every number is reproducible from the commands below.
+
 ## Project structure
 
 ```
@@ -101,10 +117,13 @@ surveillance/
   report.py       aggregate runs -> reports/metrics.json + charts, pick final model on validation
   detect.py       YOLOv8 + ByteTrack + EventDetector (loitering, crowd), streaming
   benchmark.py    detector FPS per config, one subprocess each (isolates hangs)
+  export_scores.py  final model's per-clip test scores -> reports/test_scores.json (for the demo)
+space/            Hugging Face Space wrapper: app.py (Gradio), requirements.txt, packages.txt, README.md
 tests/            17 tests: data, loss, metrics, event rules
 models/final.pt   the selected anomaly model (4 MB)
-reports/          metrics.json, detector_fps.json, detector_tradeoff.json, charts
+reports/          metrics.json, test_scores.json, detector_fps.json, detector_tradeoff.json, charts
 data/README.md    data sources and download instructions (data itself not committed)
+pyproject.toml    makes `surveillance` pip-installable (dependency ranges); requirements.txt = exact pins
 ```
 
 ## Run locally
@@ -136,7 +155,20 @@ python -m surveillance.report                 # -> reports/metrics.json, charts,
 
 ## Deployment
 
-Not deployed yet. A live demo is the next step (see Future improvements).
+**Hugging Face Spaces (Gradio SDK, free ZeroGPU hardware):** https://huggingface.co/spaces/vedpawar/ai-surveillance-demo
+
+```
+Space repo (text files only: space/*)          GitHub repo (this one)
+  app.py ── pip install ai-surveillance @ git+https://github.com/...@main
+         ── fetches reports/test_scores.json + metrics.json (raw GitHub URLs)
+         ── fetches the sample video from OpenCV
+```
+
+- **Why the Space holds only a wrapper:** Hugging Face rejects binary files committed with plain git, and this repo has PNGs and `final.pt` in its history. The Space installs the package from GitHub, so GitHub stays the single source of truth.
+- **Tabs:** *Live tracking* (upload ≤ 30 s, or use the sample, to get the tracked video + events), *Anomaly explorer* (score vs. ground truth for all 290 test videos, precomputed from `final.pt`), *About & constraints*.
+- **GPU use:** only detection + tracking run inside `@spaces.GPU`. The same code falls back to CPU anywhere else.
+- **To update:** push to GitHub, then rebuild the Space (Settings → Factory rebuild, or upload a changed `space/` file).
+- Local run of the same app: `pip install -e . gradio matplotlib && python space/app.py`.
 
 ## Limitations
 
@@ -194,6 +226,17 @@ Built in layers; each records what went wrong and the lesson.
 
 *Known gaps I chose not to fix:* RGB-only features (no flow stream), no end-to-end anomaly scoring on raw video (needs the matching I3D extractor), weak temporal localization (0.60), event thresholds not validated against labelled events, an unofficial data mirror.
 
+### Layer 4 - Deploying under constraints (November 2026, Hugging Face Spaces, Gradio)
+
+*What I built:* a public demo on Hugging Face's free ZeroGPU tier, plus packaging so the Space installs the tested code from GitHub.
+
+| # | Mistake | What actually happened | Lesson |
+|---|---|---|---|
+| 4.1 | **Used exact pins as package dependencies** | `pyproject.toml` read `requirements.txt`, so the package demanded `torch==2.15.0`. ZeroGPU forces `torch<=2.13.0`, and the build failed with `ResolutionImpossible`. Fixed with ranges (`torch>=2.2`), verified by resolving the Space's exact install for Linux locally, and re-running the tests on torch 2.13 (same 0.8032 AUC). | A *package* declares compatible ranges; an *app* pins exact versions in a lock file. Don't use one file for both. |
+| 4.2 | **Assumed ZeroGPU would just run a CPU app** | The build passed, then the runtime stopped the app with `No @spaces.GPU function detected during startup`. Fixed by wrapping only detection + tracking in `@spaces.GPU`, with a CPU fallback. | Read the platform's runtime contract, not just its build docs. |
+| 4.3 | **Let the disk fill up mid-project** | With 10 GB of zips plus caches on a nearly full laptop, commands failed with `ENOSPC`. The zips weren't needed once the caches existed. | Know which artifacts are raw inputs and which are derived, and delete what can be re-derived or re-downloaded. |
+| 4.4 | **Nearly shipped a video browsers can't play** (caught locally) | OpenCV writes MPEG-4 Part 2 (`mp4v`), which browsers won't play. The app re-encodes to H.264 with ffmpeg, which `packages.txt` installs on the Space. | Test the demo in a real browser before deploying. |
+
 ### Key takeaways
 
 1. **A number without a script is a claim, not a result.** Every metric here traces back to a file in `reports/`.
@@ -201,10 +244,11 @@ Built in layers; each records what went wrong and the lesson.
 3. **Assert your data's shape before you trust it.** One assertion caught a train/test layout mismatch that would have silently ruined training.
 4. **"Real time" depends on the hardware.** The model the report claimed ran at 45–60 FPS runs at 0.87 FPS on a laptop. Resolution and model size are the knobs, and each has a measurable cost.
 5. **An honest 0.80 beats a borrowed 0.84.** It survives questions in an interview.
+6. **Constraints are design inputs.** No GPU, a nearly full disk and free hosting decided the model sizes, the data format and the deployment architecture. Naming them, and what lifting each would unlock, is part of the result.
 
 ## Future improvements
 
-- A live demo (upload a video and get tracked people and an events timeline), then **LLM-written alert summaries** of flagged clips.
+- **LLM-written alert summaries** of flagged clips (next step).
 - Score raw video end to end using the matching I3D-ResNet50 extractor.
 - Try a stronger weakly-supervised method (RTFM-style feature magnitudes) to improve localization.
 - Label a few events on real footage to tune and evaluate the alert rules.
