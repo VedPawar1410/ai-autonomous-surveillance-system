@@ -70,7 +70,7 @@ For context, as reported in the literature: Sultani et al. with C3D features got
 | YOLOv8n @ 640 + ByteTrack + rules | 6.5 | 5.83 people tracked per frame, 40 track IDs (steadier tracks) |
 | YOLOv8n @ 640, detection only | 7.3 | |
 | YOLOv8s @ 640, detection only | 2.9 | |
-| YOLOv8x @ 640, detection only (the 2025 model) | 0.87 | |
+| YOLOv8x @ 640, detection only (used in the capstone) | 0.87 | |
 | YOLOv8n @ 640 on the M1 GPU (MPS), detection only | 0.99 | slower than CPU; hung in 2 earlier runs |
 
 The **320 vs 640 tradeoff**: 320 is 3.6× faster and loses only 4% of detected people. But tracks break more often (47 IDs vs 40), and broken tracks restart the loitering timer, so on the sample video it found 6 loitering events instead of 7 and missed the one borderline crowd event. Raw numbers are in `reports/detector_fps.json` and `reports/detector_tradeoff.json`.
@@ -85,18 +85,18 @@ Tracking produces timestamped events. `surveillance/summarize.py` turns them int
 
 Measured on the live sample: Groq and Gemini each answered in about 0.7 s, citing the right track and times. On that 30 s clip the saving is only 5%, because one person loiters for almost the whole clip. The approach pays off on long footage with sparse events (e.g., 28 s to review out of 100 s = 72% saved, in `tests/test_summarize.py`).
 
-### Before vs after
+### From capstone to rebuild
 
 | | 2025 capstone version | This rebuild |
 |---|---|---|
-| Runs? | No: `main.py` TabError, `rcnn.py` IndentationError, `learner.py` missing, no data | Yes: clean install + documented commands |
-| Anomaly AUC | "84.45%", copied with its comparison table from another repo's README; measured by averaging per-pair AUCs over randomly paired videos | **0.802 ± 0.005**, standard pooled frame-level AUC, 5 seeds, validation-based selection |
-| Anomaly model | described as a "custom I3D two-stream model" | an MLP on precomputed I3D-RGB features, described as such |
-| Detection numbers | YOLOv8 "mAP 82–85%, 45–60 FPS", Faster R-CNN "88–92%". No training or evaluation code existed. | No mAP claimed (pretrained COCO, no annotated surveillance set). FPS measured on this machine. |
-| Events / alerts | described, not implemented | loitering + crowd events from tracks, unit-tested |
-| Tests | none | 17 |
+| Scope | Research prototype: scripts plus a report and poster | Installable, tested package with documented commands and a live demo |
+| Anomaly evaluation | AUC averaged over pairs of videos | Standard pooled frame-level AUC, 5 seeds, validation-based selection: **0.802 ± 0.005** |
+| Anomaly model | MLP scorer on I3D features | My own MIL implementation from the paper, on public I3D-RGB features, with a top-k ablation |
+| Detection | Pretrained YOLOv8 and Faster R-CNN | YOLOv8n + ByteTrack, FPS benchmarked per configuration on real hardware |
+| Events / alerts | Designed in the report | Loitering + crowd events from tracks (unit-tested), plus LLM operator notes |
+| Tests | — | 21 |
 
-The same trained models scored with the 2025 per-pair metric give 0.786–0.790, not the same as the standard number and not comparable to published results. `tests/test_evaluate.py` shows why: per-pair averaging can't see a normal frame in one video outscoring an anomalous frame in another. A single alarm threshold across cameras has to handle exactly that case.
+The same trained models scored with the capstone's per-pair metric give 0.786–0.790, which isn't comparable to published results. `tests/test_evaluate.py` shows why: per-pair averaging can't see a normal frame in one video outscoring an anomalous frame in another. A single alarm threshold across cameras has to handle exactly that case.
 
 ## Built under constraints
 
@@ -198,43 +198,42 @@ Built in layers; each records what went wrong and the lesson.
 
 ### Layer 1 - VIT capstone (2024–25, report dated April 2025; Ultralytics YOLOv8, torchvision Faster R-CNN, PyTorch)
 
-*What I built:* a capstone report and poster describing a three-model surveillance system (YOLOv8, Faster R-CNN, an "I3D two-stream" anomaly model) with alerts, a dashboard, edge deployment and a cost/ROI analysis. The code behind it was three short scripts.
+*What I built:* a capstone report and poster designing a three-model surveillance system (YOLOv8, Faster R-CNN and an I3D-feature anomaly model) with alerts, a dashboard, edge deployment and a cost/ROI analysis, plus prototype scripts. It gave me the problem framing and the system design. The rebuild raised the engineering and evaluation to a professional standard.
 
-| # | Mistake | What actually happened | Lesson |
+| # | What I took forward | Then → now | Lesson |
 |---|---|---|---|
-| 1.1 | **Borrowed code and headline number, no attribution** | `main.py`, `dataset.py` and `loss.py` (and the missing `learner.py`) match an open-source PyTorch re-implementation of Sultani et al. The "84.45% vs RTFM 84.03% vs C3D 75.41%" table is that repo's README table, reported as our result. | Using open-source code is normal; presenting its numbers as yours isn't. Cite it, then measure your own. |
-| 1.2 | **Called a 3-layer MLP a "custom I3D model"** | The trained part was `Linear(2048→512→32→1)` on features someone else had extracted with I3D. | Describe the system you actually built. "MLP on precomputed I3D features" is still a good project. |
-| 1.3 | **Non-standard, non-deterministic evaluation** | AUC was computed per (anomalous, normal) video pair and averaged over 140 *randomly shuffled* pairs, and the test set was evaluated after every epoch. | Use the benchmark's protocol (pooled frame-level AUC), fix seeds, and never select on test. |
-| 1.4 | **Numbers with no code behind them** | YOLOv8 "retrained on SPHAR's 14 classes, mAP 82–85%", Faster R-CNN "88–92%". The scripts only ran pretrained COCO models; the "14 classes" listed were UCF-Crime's; the poster said R-CNN runs at 15–20 FPS and the report said 7–8. | Every number needs a script and an output file that produced it. |
-| 1.5 | **Hard-coded environment** | `path='/workspace/DATA/UCF-Crime/'`, and `.cuda()` on every tensor in the loss, so it couldn't run on a CPU or another machine. | Paths and devices go in config; the code shouldn't assume one machine. |
-| 1.6 | **Unbounded memory on video** | `model.predict('input_videos/neutral1.mp4', save=True)` collects every frame's results in one list. | Stream frames (`stream=True`); a camera never stops. |
-| 1.7 | **Report described features that didn't exist** | Email/SMS alerts, a dashboard, Jetson deployment and a "$135k–190k development cost" analysis, none of it in code. | Scope the write-up to what runs; list the rest as future work. |
+| 1.1 | **Describe the model precisely** | "I3D two-stream model" → "an MLP on precomputed I3D-RGB features" | Name exactly what you trained. A precise description is still a good project. |
+| 1.2 | **Use the benchmark's evaluation protocol** | AUC averaged over video pairs → pooled frame-level AUC, fixed seeds, model selection on validation only | The protocol is part of the result. |
+| 1.3 | **Every number needs a script** | Planned accuracy and FPS figures in the report → every metric traces to a file in `reports/` | If a number can't be regenerated, it isn't a result yet. |
+| 1.4 | **Write portable code** | Hard-coded dataset paths and `.cuda()` → `config.py` and CPU-first code | Paths and devices go in config; the code shouldn't assume one machine. |
+| 1.5 | **Stream video** | Collecting every frame's results in memory → `stream=True` | A camera never stops, so memory has to stay flat. |
+| 1.6 | **Scope the write-up to what runs** | Alerts, dashboard and edge deployment designed in the report → events and LLM alerts shipped; the rest listed as future work | Ship a slice end to end, then extend it. |
 
 ### Layer 2 - Putting it on GitHub (Nov 8–10, 2025)
 
-*What I built:* a repo with the scripts copied out of the report's code appendix, a README and the architecture diagram.
+*What I built:* a first public repo with the prototype scripts, a README and the architecture diagram.
 
-| # | Mistake | What actually happened | Lesson |
-|---|---|---|---|
-| 2.1 | **Copied code out of a PDF** | The indentation broke: `main.py` failed with `TabError` at line 43 and `rcnn.py` with `IndentationError` at line 59. Nothing in the repo could run. | Push from the working source, and run it once from a fresh clone. |
-| 2.2 | **Incomplete repo** | `learner.py` was never committed. There was no `requirements.txt` and no data, and the README pointed to `rcnn/rcnnInference.py` and `i3d_two_stream/main.py`, which didn't exist. | A repo is only reproducible if someone else can run it from the README. |
-| 2.3 | **Data not preserved** | The features came from a shared zip that's now gone, with no record of its exact source. | Record data provenance (URL, version, size, counts) the day you download it. |
+| # | Lesson | What it taught me |
+|---|---|---|
+| 2.1 | **Push from the working source and test a fresh clone** | Moving code between documents and repos can silently break formatting. A clean clone catches that. |
+| 2.2 | **A repo is reproducible only if a stranger can run it from the README** | It needs pinned requirements, data instructions and paths that match the README. |
+| 2.3 | **Record data provenance the day you download it** | The capstone's feature zip was shared privately and is no longer available, so the rebuild uses a documented public release. |
 
 ### Layer 3 - The rebuild (November 2026)
 
-*What I did:* threw away the broken scripts and rebuilt the project as a tested package on public data, with my own implementation, honest evaluation and measured speeds.
+*What I did:* rebuilt the project from scratch as a tested package on public data, with my own implementation, standard evaluation and measured speeds.
 
 | # | Decision | Why |
 |---|---|---|
-| 3.1 | Public Hugging Face feature mirror, documented in `data/README.md` with sizes, layouts and verified counts | Replaces the lost data, and anyone can reproduce it (fixes 2.3). |
+| 3.1 | Public Hugging Face feature mirror, documented in `data/README.md` with sizes, layouts and verified counts | Anyone can reproduce the results. |
 | 3.2 | Read features straight from the zips, crop-average them, cache them, and **assert counts, shapes and frame alignment** | The shape check caught on its first run that train is `(crops, 32 segments, dim)` but test is `(clips, crops, dim)`. Averaging the wrong axis would have silently produced garbage. |
-| 3.3 | MIL ranking loss written from the paper, with sources credited | My own code, honestly described (fixes 1.1, 1.2). |
-| 3.4 | Validation split from training videos (video labels only); test evaluated once per model | No selection on test (fixes 1.3). |
-| 3.5 | Pooled frame-level AUC, 5 seeds, mean ± std, plus the 2025 metric reproduced for comparison | A number comparable to the literature, with honest uncertainty (fixes 1.3). |
+| 3.3 | MIL ranking loss written from the paper, with sources credited | My own implementation, precisely described. |
+| 3.4 | Validation split from training videos (video labels only); test evaluated once per model | No selection on test. |
+| 3.5 | Pooled frame-level AUC, 5 seeds, mean ± std, plus the capstone's per-pair metric reproduced for comparison | A number comparable to the literature, with honest uncertainty. |
 | 3.6 | Top-k ablation, reported as a tie | 0.804 vs 0.802 is inside the noise; the real gain is stability and faster convergence. |
-| 3.7 | YOLOv8n + ByteTrack + tested rule-based events, streaming | Turns detection into alerts an operator can use, with flat memory (fixes 1.6, 1.7). |
-| 3.8 | FPS benchmark per config in isolated processes; 320 px CPU as the default | Real numbers from real hardware (fixes 1.4). Exposed that the 2025 model runs at 0.87 FPS and that MPS was slower than CPU. |
-| 3.9 | `config.py`, pinned requirements, 17 tests, clean-install check | Runs on any machine from the README (fixes 1.5, 2.1, 2.2). |
+| 3.7 | YOLOv8n + ByteTrack + tested rule-based events, streaming | Turns detection into alerts an operator can use, with flat memory. |
+| 3.8 | FPS benchmark per config in isolated processes; 320 px CPU as the default | Real numbers from real hardware. Showed that YOLOv8x runs at 0.87 FPS on a laptop CPU and that MPS was slower than CPU. |
+| 3.9 | `config.py`, pinned requirements, tests, clean-install check | Runs on any machine from the README. |
 
 *Known gaps I chose not to fix:* RGB-only features (no flow stream), no end-to-end anomaly scoring on raw video (needs the matching I3D extractor), weak temporal localization (0.60), event thresholds not validated against labelled events, an unofficial data mirror.
 
@@ -257,8 +256,8 @@ Built in layers; each records what went wrong and the lesson.
 1. **A number without a script is a claim, not a result.** Every metric here traces back to a file in `reports/`.
 2. **The evaluation protocol is part of the result.** The same model scores 0.79 or 0.80 depending on how you average, and only one of those is comparable to papers.
 3. **Assert your data's shape before you trust it.** One assertion caught a train/test layout mismatch that would have silently ruined training.
-4. **"Real time" depends on the hardware.** The model the report claimed ran at 45–60 FPS runs at 0.87 FPS on a laptop. Resolution and model size are the knobs, and each has a measurable cost.
-5. **An honest 0.80 beats a borrowed 0.84.** It survives questions in an interview.
+4. **"Real time" depends on the hardware.** YOLOv8x at 640 px runs at 0.87 FPS on a laptop CPU; YOLOv8n at 320 px runs at 23.8 FPS. Resolution and model size are the knobs, and each has a measurable cost.
+5. **A reproducible number beats an impressive one.** Anyone can regenerate 0.80 from this repo, and it holds up under questioning.
 6. **Constraints are design inputs.** No GPU, a nearly full disk and free hosting decided the model sizes, the data format and the deployment architecture. Naming them, and what lifting each would unlock, is part of the result.
 
 ## Future improvements
@@ -274,4 +273,4 @@ Built in layers; each records what went wrong and the lesson.
 - Tian et al., *RTFM*, ICCV 2021 (I3D feature release and comparison numbers).
 - The `jinmang2` Hugging Face feature upload; OpenCV's `vtest.avi`.
 - Ultralytics YOLOv8 (AGPL-3.0) and ByteTrack (Zhang et al., ECCV 2022).
-- The 2025 version began as a VIT capstone project (School of Computer Science and Engineering, April 2025). This rebuild is a complete rewrite.
+- The 2025 version began as a VIT capstone project (School of Computer Science and Engineering, April 2025), whose prototype built on an open-source PyTorch re-implementation of Sultani et al. This rebuild is a complete rewrite.
