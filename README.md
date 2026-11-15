@@ -10,7 +10,7 @@ Two parts. The first detects **anomalous events** (robbery, assault, road accide
 | False alarms on normal videos (score > 0.5) | 2.1% of frames |
 | Person detection + tracking speed, laptop CPU (Apple M1) | **23.8 FPS** (real time for a 10 FPS camera) |
 | Same pipeline on the live demo (free ZeroGPU, CUDA) | **53.6 FPS** (300 frames, measured on the live Space) |
-| Tests | 17 passing |
+| Tests | 21 passing |
 
 ---
 
@@ -75,6 +75,16 @@ For context, as reported in the literature: Sultani et al. with C3D features got
 
 The **320 vs 640 tradeoff**: 320 is 3.6× faster and loses only 4% of detected people. But tracks break more often (47 IDs vs 40), and broken tracks restart the loitering timer, so on the sample video it found 6 loitering events instead of 7 and missed the one borderline crowd event. Raw numbers are in `reports/detector_fps.json` and `reports/detector_tradeoff.json`.
 
+### Operator alerts (LLM layer)
+
+Tracking produces timestamped events. `surveillance/summarize.py` turns them into a short triage note, so an operator reviews only the seconds that matter instead of the whole recording:
+
+1. **Code** pads each event by 2 s, merges overlapping windows, and computes *review time* and *% of footage saved*.
+2. **An LLM** (Groq `gpt-oss-20b`, with Gemini `3.5-flash-lite` as the fallback, both on free tiers) gets *only those facts as JSON* and writes 2–4 sentences. It never sees the video, and the prompt forbids anything not in the facts.
+3. **Code** appends the exact review windows after the LLM text, so the actionable part never depends on the LLM. If both providers fail, or a daily cap of 200 calls is hit, a template note is used instead.
+
+Measured on the live sample: Groq and Gemini each answered in about 0.7 s, citing the right track and times. On that 30 s clip the saving is only 5%, because one person loiters for almost the whole clip. The approach pays off on long footage with sparse events (e.g., 28 s to review out of 100 s = 72% saved, in `tests/test_summarize.py`).
+
 ### Before vs after
 
 | | 2025 capstone version | This rebuild |
@@ -99,6 +109,7 @@ Every number above was produced on free or personal hardware. These limits shape
 | **About 10–14 GB of free disk** (it filled up completely mid-project) | Read features straight from the zips (no 10 GB extraction), cached crop-averaged arrays (~1 GB), deleted the zips once cached | The raw UCF-Crime videos (~100 GB) |
 | **The original data was lost**, and raw video was too big | Rebuilt on public precomputed I3D features (RGB only, no optical flow), with provenance documented | A two-stream (RGB + flow) model; end-to-end scoring of new videos |
 | **Free hosting**: Hugging Face ZeroGPU, a GPU only per request within a daily quota, plus a forced torch ≤ 2.13 | Uploads capped at 30 s; only detection/tracking runs inside the GPU slot (video re-encoding stays outside); package dependencies declared as ranges so they install alongside the host's PyTorch | Always-on GPU, longer videos, concurrent users |
+| **Free LLM tiers**: rate limits, models retired without notice (Llama 3.3 vanished from Groq; Gemini 2.5 Flash closed to new users; Gemini 3.8 Flash timed out at 20 s) | Provider-agnostic OpenAI-compatible client, Groq → Gemini → template fallback, model names overridable by env var, daily call cap | A dedicated, SLA-backed model endpoint |
 | **No labelled event data** for loitering/crowding | Hand-set, documented thresholds; event logic unit-tested with synthetic tracks | Tuned and measured alert precision/recall |
 
 **The result under these limits:** a benchmarked anomaly detector at 0.80 frame-AUC, comparable to published MIL baselines, plus a tracker that runs in real time on a laptop CPU and at 53.6 FPS on a free shared GPU. Every number is reproducible from the commands below.
@@ -118,8 +129,9 @@ surveillance/
   detect.py       YOLOv8 + ByteTrack + EventDetector (loitering, crowd), streaming
   benchmark.py    detector FPS per config, one subprocess each (isolates hangs)
   export_scores.py  final model's per-clip test scores -> reports/test_scores.json (for the demo)
+  summarize.py    events -> review windows + % footage saved (code) + LLM operator note (Groq -> Gemini -> template)
 space/            Hugging Face Space wrapper: app.py (Gradio), requirements.txt, packages.txt, README.md
-tests/            17 tests: data, loss, metrics, event rules
+tests/            21 tests: data, loss, metrics, event rules, alert summaries
 models/final.pt   the selected anomaly model (4 MB)
 reports/          metrics.json, test_scores.json, detector_fps.json, detector_tradeoff.json, charts
 data/README.md    data sources and download instructions (data itself not committed)
@@ -132,7 +144,7 @@ Python 3.12. These are the exact commands run in this rebuild.
 
 ```bash
 pip install -r requirements-dev.txt          # runtime: requirements.txt; dev adds matplotlib + pytest
-python -m pytest                             # 17 tests (one is skipped if the dataset isn't downloaded)
+python -m pytest                             # 21 tests (one is skipped if the dataset isn't downloaded)
 ```
 
 Real-time tracking on the sample video (no dataset needed):
@@ -236,6 +248,7 @@ Built in layers; each records what went wrong and the lesson.
 | 4.2 | **Assumed ZeroGPU would just run a CPU app** | The build passed, then the runtime stopped the app with `No @spaces.GPU function detected during startup`. Fixed by wrapping only detection + tracking in `@spaces.GPU`, with a CPU fallback. | Read the platform's runtime contract, not just its build docs. |
 | 4.3 | **Let the disk fill up mid-project** | With 10 GB of zips plus caches on a nearly full laptop, commands failed with `ENOSPC`. The zips weren't needed once the caches existed. | Know which artifacts are raw inputs and which are derived, and delete what can be re-derived or re-downloaded. |
 | 4.4 | **Nearly shipped a video browsers can't play** (caught locally) | OpenCV writes MPEG-4 Part 2 (`mp4v`), which browsers won't play. The app re-encodes to H.264 with ffmpeg, which `packages.txt` installs on the Space. | Test the demo in a real browser before deploying. |
+| 4.5 | **Hard-coded LLM model names from memory** | The first test returned 404 from both providers: Groq no longer serves Llama 3.3, and Gemini 2.5 Flash is closed to new users. The fallback chain still produced a (template) answer. Fixed by checking each provider's `/models` list and picking current, fast models. | Hosted models get retired; verify against the live model list, make names configurable, and always have a non-LLM fallback. |
 
 ### Key takeaways
 
@@ -248,7 +261,7 @@ Built in layers; each records what went wrong and the lesson.
 
 ## Future improvements
 
-- **LLM-written alert summaries** of flagged clips (next step).
+- Run the alert LLM locally (a small open model on the Space's GPU), so no event data leaves the deployment: the privacy-first option for real CCTV.
 - Score raw video end to end using the matching I3D-ResNet50 extractor.
 - Try a stronger weakly-supervised method (RTFM-style feature magnitudes) to improve localization.
 - Label a few events on real footage to tune and evaluate the alert rules.

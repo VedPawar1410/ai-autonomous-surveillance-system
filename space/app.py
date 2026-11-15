@@ -23,7 +23,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from surveillance import config, detect
+from surveillance import config, detect, summarize
+
+LLM_DAILY_CAP = 200  # public demo: cap paid/free-tier LLM calls per day; beyond it, the template summary is used
+_llm_usage = {"day": None, "calls": 0}
 
 GITHUB_RAW = "https://raw.githubusercontent.com/VedPawar1410/ai-autonomous-surveillance-system/main"
 SAMPLE_URL = "https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/vtest.avi"
@@ -80,7 +83,24 @@ def track(video_path):
              f"{MAX_SECONDS} s) at **{s['processing_fps']} FPS** on this host's **{s['device'].upper()}** · "
              f"{s['tracked_people_per_frame']} people tracked per frame · {s['unique_track_ids']} track IDs · "
              f"YOLOv8n @ {s['imgsz']} px + ByteTrack")
-    return str(out), rows, stats
+    return str(out), rows, stats, s, ""
+
+
+def summarize_alerts(s):
+    """LLM triage note from the last tracking result (Groq -> Gemini -> template), with a daily cap."""
+    if not s:
+        raise gr.Error("Run tracking first.")
+    import datetime
+    today = datetime.date.today()
+    if _llm_usage["day"] != today:
+        _llm_usage.update(day=today, calls=0)
+    providers = summarize.PROVIDERS if _llm_usage["calls"] < LLM_DAILY_CAP else []
+    text, source, errors = summarize.summarize(s, providers=providers)
+    if source != "template":
+        _llm_usage["calls"] += 1
+    note = {"template": "template (no LLM available or daily cap reached)"}.get(source, f"LLM: {source}")
+    return f"{text}\n\n<sub>Written by {note}. The LLM sees only the event table (not the video); "\
+           f"review windows and % saved are computed in code.</sub>"
 
 
 # ---------- Tab 2: anomaly explorer ----------
@@ -128,6 +148,8 @@ CONSTRAINTS = f"""### Built under constraints
 - **Data:** public, RGB-only I3D features (no optical-flow stream). Raw UCF-Crime video is about 100 GB, beyond a
   laptop's disk and compute budget, so the anomaly model is trained on precomputed features. That's also why this tab
   explores precomputed scores rather than scoring new uploads.
+- **LLM alerts on free tiers:** Groq (gpt-oss-20b) first, Gemini (3.5 Flash-Lite) as the fallback, and a plain template
+  if both fail or the daily cap of {LLM_DAILY_CAP} calls is reached. The LLM never sees video, only the event table.
 - **Result under those limits:** test frame-level ROC AUC **{k1['frame_auc']['mean']:.3f} ± {k1['frame_auc']['std']:.3f}**
   over 5 seeds (final model {final['frame_auc']:.3f}), with 2.1% false alarms on normal videos.
 """
@@ -145,9 +167,13 @@ with gr.Blocks(title="AI Surveillance demo") as demo:
         stats_md = gr.Markdown()
         events_df = gr.Dataframe(headers=["event", "track id", "start (s)", "end (s)", "peak people"],
                                  label="Events", interactive=False)
+        last_summary = gr.State(None)
+        summary_btn = gr.Button("Summarize alerts for the operator (LLM)")
+        summary_md = gr.Markdown()
         gr.Examples(examples=[[str(config.SAMPLE_VIDEO)]], inputs=video_in,
                     label="Sample: OpenCV vtest.avi (pedestrians, 80 s, Apache-2.0)")
-        run_btn.click(track, inputs=video_in, outputs=[video_out, events_df, stats_md])
+        run_btn.click(track, inputs=video_in, outputs=[video_out, events_df, stats_md, last_summary, summary_md])
+        summary_btn.click(summarize_alerts, inputs=last_summary, outputs=summary_md)
 
     with gr.Tab("Anomaly explorer (UCF-Crime)"):
         gr.Markdown(f"Scores from the final MIL model (`models/final.pt`) on all 290 UCF-Crime test videos. "
